@@ -7,6 +7,9 @@
 
 <link rel="manifest" href="manifest.json">
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
 <style>
 body {
   margin: 0;
@@ -32,26 +35,29 @@ body {
   background: lime;
 }
 
-.zone {
-  position: absolute;
-  height: 100%;
-}
-
-.green { background: rgba(0,255,0,0.3); left: 60%; width: 20%; }
-.red { background: rgba(255,0,0,0.3); left: 90%; width: 10%; }
+.zone { position:absolute;height:100%;}
+.green { left:60%; width:20%; background:rgba(0,255,0,0.3);}
+.red { left:90%; width:10%; background:rgba(255,0,0,0.3);}
 
 button {
-  padding: 10px 15px;
-  margin: 5px;
-  border: none;
-  border-radius: 8px;
-  font-weight: bold;
-  background: #00c3ff;
+  padding:10px;
+  margin:5px;
+  border:none;
+  border-radius:8px;
+  background:#00c3ff;
+  font-weight:bold;
 }
 
 canvas {
-  background: #1a1a1a;
-  border-radius: 10px;
+  background:#1a1a1a;
+  border-radius:10px;
+}
+
+#leaderboard div {
+  background:#333;
+  margin:4px;
+  padding:5px;
+  border-radius:5px;
 }
 </style>
 </head>
@@ -59,6 +65,7 @@ canvas {
 <body>
 
 <h2>🛞 Tire Launch</h2>
+
 Coins: <span id="coins">0</span> | High: <span id="high">0</span>
 
 <div id="bar">
@@ -73,37 +80,46 @@ Coins: <span id="coins">0</span> | High: <span id="high">0</span>
 
 <canvas id="canvas" width="320" height="220"></canvas>
 
-<h3>Upgrades</h3>
-<button onclick="upgradeEngine()">Engine</button>
-<button onclick="upgradeTire()">Tire</button>
+<h3>Submit Score</h3>
+<input id="nameInput" placeholder="Your name">
+<button onclick="submitScore()">Submit</button>
 
-<h3>Skins</h3>
-<button onclick="setSkin('white')">Default</button>
-<button onclick="setSkin('red')">Red (100)</button>
-<button onclick="setSkin('gold')">Gold (300)</button>
+<h3>🏆 Leaderboard</h3>
+<div id="leaderboard"></div>
 
 <script>
+// 🔥 FIREBASE CONFIG
+const firebaseConfig = {
+  apiKey: "AIzaSyDskD-qA1eCLTwsOCjqrarHQfTH9uYBrik",
+  authDomain: "tire-f726f.firebaseapp.com",
+  databaseURL: "https://tire-f726f-default-rtdb.firebaseio.com",
+  projectId: "tire-f726f",
+  storageBucket: "tire-f726f.firebasestorage.app",
+  messagingSenderId: "762832858828",
+  appId: "1:762832858828:web:9b26281999fd389d47dc69"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// GAME DATA
 let power=0, coins=0, engine=1, tire=1, high=0;
-let skin="white";
-let boosting=false;
+let lastScore=0;
+let lastSubmit=0;
 
 const powerBar=document.getElementById("power");
-
-function save(){
-localStorage.setItem("save",JSON.stringify({coins,engine,tire,high,skin}));
-}
-function load(){
-let s=JSON.parse(localStorage.getItem("save"));
-if(s){coins=s.coins;engine=s.engine;tire=s.tire;high=s.high;skin=s.skin;}
-updateUI();
-}
-function updateUI(){
-coinsText.innerText=coins;
-highText.innerText=high;
-}
 const coinsText=document.getElementById("coins");
 const highText=document.getElementById("high");
 
+// SAVE USERNAME
+const nameInput=document.getElementById("nameInput");
+nameInput.value = localStorage.getItem("username") || "";
+
+nameInput.onchange = () => {
+  localStorage.setItem("username", nameInput.value);
+};
+
+// REV
 function rev(){
 power=0;
 let i=setInterval(()=>{
@@ -113,49 +129,34 @@ powerBar.style.width=power+"%";
 },40);
 }
 
+// LAUNCH
 function launch(){
-let multiplier=1;
+let mult=1;
+if(power>60 && power<80){ mult=1.5; navigator.vibrate?.(100);}
+if(power>90){ mult=0.7;}
 
-if(power>60 && power<80){ // PERFECT
-multiplier=1.5;
-navigator.vibrate?.(100);
-}
-if(power>90){ multiplier=0.7; }
-
-let speed=power*0.25*engine*multiplier;
+let speed=power*0.25*engine*mult;
 animate(speed);
 
 power=0;
 powerBar.style.width="0%";
 }
 
+// BOOST
+let boosting=false;
 function boost(){
 boosting=true;
 setTimeout(()=>boosting=false,300);
 }
 
-function upgradeEngine(){
-if(coins>=50){coins-=50;engine++;updateUI();save();}
-}
-function upgradeTire(){
-if(coins>=50){coins-=50;tire++;updateUI();save();}
-}
-
-function setSkin(s){
-if(s==="red" && coins<100) return;
-if(s==="gold" && coins<300) return;
-skin=s;
-save();
-}
-
+// CANVAS
 const canvas=document.getElementById("canvas");
 const ctx=canvas.getContext("2d");
 
 function animate(speed){
 let x=0,y=170;
 let vx=speed, vy=speed*0.6;
-let g=0.4, rot=0;
-let cam=0;
+let g=0.4;
 
 let loop=setInterval(()=>{
 ctx.clearRect(0,0,320,220);
@@ -165,29 +166,25 @@ if(boosting) vy+=0.8;
 
 x+=vx*0.1;
 y-=vy*0.1;
-rot+=vx*0.05;
 
 if(y>=170){
 y=170;
 clearInterval(loop);
 
 let dist=Math.floor(x*tire);
-let earn=Math.floor(dist/10);
-coins+=earn;
+lastScore=dist;
 
+coins += Math.floor(dist/10);
 if(dist>high) high=dist;
 
 updateUI();
-save();
 }
 
-cam=x-80;
+let cam=x-80;
 
-// ground
 ctx.fillStyle="#444";
 ctx.fillRect(-cam,180,2000,40);
 
-// ramp
 ctx.fillStyle="#888";
 ctx.beginPath();
 ctx.moveTo(80-cam,180);
@@ -195,23 +192,55 @@ ctx.lineTo(120-cam,150);
 ctx.lineTo(140-cam,180);
 ctx.fill();
 
-// tire
-ctx.save();
-ctx.translate(x-cam,y);
-ctx.rotate(rot);
-
 ctx.beginPath();
-ctx.arc(0,0,12,0,Math.PI*2);
-ctx.fillStyle=skin;
+ctx.arc(x-cam,y,12,0,Math.PI*2);
+ctx.fillStyle="white";
 ctx.fill();
-ctx.stroke();
-
-ctx.restore();
 
 },30);
 }
 
-load();
+// SUBMIT SCORE (ANTI SPAM)
+function submitScore(){
+let now=Date.now();
+if(now-lastSubmit<3000) return;
+
+let name=nameInput.value.trim();
+if(!name || lastScore===0) return;
+
+db.ref("scores").push({
+name:name,
+score:lastScore
+});
+
+lastSubmit=now;
+}
+
+// LOAD LEADERBOARD
+function loadLeaderboard(){
+db.ref("scores").orderByChild("score").limitToLast(10).on("value", snap=>{
+let data=snap.val();
+let scores=[];
+
+for(let k in data){ scores.push(data[k]); }
+
+scores.sort((a,b)=>b.score-a.score);
+
+let html="";
+scores.forEach(s=>{
+html+=`<div>${s.name}: ${s.score}</div>`;
+});
+
+document.getElementById("leaderboard").innerHTML=html;
+});
+}
+
+function updateUI(){
+coinsText.innerText=coins;
+highText.innerText=high;
+}
+
+loadLeaderboard();
 </script>
 
 </body>

@@ -16,17 +16,14 @@ body {
   text-align: center;
 }
 
-h1 {
-  margin-top: 10px;
-}
-
 #bar {
   width: 80%;
   height: 20px;
   background: #333;
-  margin: 15px auto;
+  margin: 10px auto;
   border-radius: 10px;
   overflow: hidden;
+  position: relative;
 }
 
 #power {
@@ -35,42 +32,44 @@ h1 {
   background: lime;
 }
 
+.zone {
+  position: absolute;
+  height: 100%;
+}
+
+.green { background: rgba(0,255,0,0.3); left: 60%; width: 20%; }
+.red { background: rgba(255,0,0,0.3); left: 90%; width: 10%; }
+
 button {
-  padding: 12px 18px;
-  font-size: 16px;
+  padding: 10px 15px;
   margin: 5px;
   border: none;
   border-radius: 8px;
-  background: #00c3ff;
-  color: black;
   font-weight: bold;
+  background: #00c3ff;
 }
 
 canvas {
   background: #1a1a1a;
-  margin-top: 10px;
   border-radius: 10px;
-}
-
-.stats {
-  margin: 10px;
 }
 </style>
 </head>
 
 <body>
 
-<h1>🛞 Tire Launch</h1>
+<h2>🛞 Tire Launch</h2>
+Coins: <span id="coins">0</span> | High: <span id="high">0</span>
 
-<div class="stats">
-Coins: <span id="coins">0</span> |
-High Score: <span id="high">0</span>
+<div id="bar">
+  <div class="zone green"></div>
+  <div class="zone red"></div>
+  <div id="power"></div>
 </div>
-
-<div id="bar"><div id="power"></div></div>
 
 <button onclick="rev()">Rev</button>
 <button onclick="launch()">Launch</button>
+<button onclick="boost()">BOOST</button>
 
 <canvas id="canvas" width="320" height="220"></canvas>
 
@@ -78,179 +77,138 @@ High Score: <span id="high">0</span>
 <button onclick="upgradeEngine()">Engine</button>
 <button onclick="upgradeTire()">Tire</button>
 
-<audio id="revSound" src="https://assets.mixkit.co/sfx/preview/mixkit-car-engine-start-1562.mp3"></audio>
-<audio id="launchSound" src="https://assets.mixkit.co/sfx/preview/mixkit-fast-small-sweep-transition-166.mp3"></audio>
+<h3>Skins</h3>
+<button onclick="setSkin('white')">Default</button>
+<button onclick="setSkin('red')">Red (100)</button>
+<button onclick="setSkin('gold')">Gold (300)</button>
 
 <script>
-let power = 0;
-let coins = 0;
-let engine = 1;
-let tire = 1;
-let high = 0;
+let power=0, coins=0, engine=1, tire=1, high=0;
+let skin="white";
+let boosting=false;
 
-const powerBar = document.getElementById("power");
-const coinsText = document.getElementById("coins");
-const highText = document.getElementById("high");
+const powerBar=document.getElementById("power");
 
-const revSound = document.getElementById("revSound");
-const launchSound = document.getElementById("launchSound");
+function save(){
+localStorage.setItem("save",JSON.stringify({coins,engine,tire,high,skin}));
+}
+function load(){
+let s=JSON.parse(localStorage.getItem("save"));
+if(s){coins=s.coins;engine=s.engine;tire=s.tire;high=s.high;skin=s.skin;}
+updateUI();
+}
+function updateUI(){
+coinsText.innerText=coins;
+highText.innerText=high;
+}
+const coinsText=document.getElementById("coins");
+const highText=document.getElementById("high");
 
-// LOAD SAVE
-function load() {
-  let save = JSON.parse(localStorage.getItem("tireSave"));
-  if (save) {
-    coins = save.coins;
-    engine = save.engine;
-    tire = save.tire;
-    high = save.high;
-  }
-  updateUI();
+function rev(){
+power=0;
+let i=setInterval(()=>{
+power+=2+engine;
+if(power>=100){power=100;clearInterval(i);}
+powerBar.style.width=power+"%";
+},40);
 }
 
-// SAVE
-function save() {
-  localStorage.setItem("tireSave", JSON.stringify({
-    coins, engine, tire, high
-  }));
+function launch(){
+let multiplier=1;
+
+if(power>60 && power<80){ // PERFECT
+multiplier=1.5;
+navigator.vibrate?.(100);
+}
+if(power>90){ multiplier=0.7; }
+
+let speed=power*0.25*engine*multiplier;
+animate(speed);
+
+power=0;
+powerBar.style.width="0%";
 }
 
-function updateUI() {
-  coinsText.innerText = coins;
-  highText.innerText = high;
+function boost(){
+boosting=true;
+setTimeout(()=>boosting=false,300);
 }
 
-// REV SYSTEM
-let revving = false;
-
-function rev() {
-  if (revving) return;
-
-  revSound.currentTime = 0;
-  revSound.play();
-
-  revving = true;
-  power = 0;
-
-  let interval = setInterval(() => {
-    power += 2 + engine * 0.8;
-
-    if (power >= 100) {
-      power = 100;
-      revving = false;
-      clearInterval(interval);
-    }
-
-    powerBar.style.width = power + "%";
-  }, 40);
+function upgradeEngine(){
+if(coins>=50){coins-=50;engine++;updateUI();save();}
+}
+function upgradeTire(){
+if(coins>=50){coins-=50;tire++;updateUI();save();}
 }
 
-// PHYSICS LAUNCH
-function launch() {
-  if (power <= 0) return;
-
-  launchSound.currentTime = 0;
-  launchSound.play();
-
-  let speed = power * 0.25 * engine;
-  let angle = Math.PI / 4; // 45° ramp
-
-  animate(speed, angle);
-
-  power = 0;
-  powerBar.style.width = "0%";
+function setSkin(s){
+if(s==="red" && coins<100) return;
+if(s==="gold" && coins<300) return;
+skin=s;
+save();
 }
 
-// UPGRADES
-function upgradeEngine() {
-  if (coins >= 50) {
-    coins -= 50;
-    engine++;
-    updateUI();
-    save();
-  }
+const canvas=document.getElementById("canvas");
+const ctx=canvas.getContext("2d");
+
+function animate(speed){
+let x=0,y=170;
+let vx=speed, vy=speed*0.6;
+let g=0.4, rot=0;
+let cam=0;
+
+let loop=setInterval(()=>{
+ctx.clearRect(0,0,320,220);
+
+vy-=g;
+if(boosting) vy+=0.8;
+
+x+=vx*0.1;
+y-=vy*0.1;
+rot+=vx*0.05;
+
+if(y>=170){
+y=170;
+clearInterval(loop);
+
+let dist=Math.floor(x*tire);
+let earn=Math.floor(dist/10);
+coins+=earn;
+
+if(dist>high) high=dist;
+
+updateUI();
+save();
 }
 
-function upgradeTire() {
-  if (coins >= 50) {
-    coins -= 50;
-    tire++;
-    updateUI();
-    save();
-  }
-}
+cam=x-80;
 
-// CANVAS
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
+// ground
+ctx.fillStyle="#444";
+ctx.fillRect(-cam,180,2000,40);
 
-function animate(speed, angle) {
-  let x = 40;
-  let y = 170;
+// ramp
+ctx.fillStyle="#888";
+ctx.beginPath();
+ctx.moveTo(80-cam,180);
+ctx.lineTo(120-cam,150);
+ctx.lineTo(140-cam,180);
+ctx.fill();
 
-  let vx = speed * Math.cos(angle);
-  let vy = speed * Math.sin(angle);
+// tire
+ctx.save();
+ctx.translate(x-cam,y);
+ctx.rotate(rot);
 
-  let gravity = 0.4;
-  let rotation = 0;
+ctx.beginPath();
+ctx.arc(0,0,12,0,Math.PI*2);
+ctx.fillStyle=skin;
+ctx.fill();
+ctx.stroke();
 
-  let distance = 0;
+ctx.restore();
 
-  let interval = setInterval(() => {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // physics
-    vy -= gravity;
-    x += vx * 0.1;
-    y -= vy * 0.1;
-
-    rotation += vx * 0.05;
-
-    if (y >= 170) {
-      y = 170;
-      clearInterval(interval);
-
-      distance = Math.floor(x * tire);
-      let earned = Math.floor(distance / 8);
-
-      coins += earned;
-
-      if (distance > high) {
-        high = distance;
-      }
-
-      updateUI();
-      save();
-    }
-
-    // ground
-    ctx.fillStyle = "#444";
-    ctx.fillRect(0, 180, 320, 40);
-
-    // ramp
-    ctx.fillStyle = "#888";
-    ctx.beginPath();
-    ctx.moveTo(80, 180);
-    ctx.lineTo(120, 150);
-    ctx.lineTo(140, 180);
-    ctx.fill();
-
-    // tire
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(rotation);
-
-    ctx.beginPath();
-    ctx.arc(0, 0, 12, 0, Math.PI * 2);
-    ctx.fillStyle = "white";
-    ctx.fill();
-
-    ctx.strokeStyle = "black";
-    ctx.lineWidth = 3;
-    ctx.stroke();
-
-    ctx.restore();
-
-  }, 30);
+},30);
 }
 
 load();

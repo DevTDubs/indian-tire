@@ -1,246 +1,209 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tire Launch</title>
-
-<link rel="manifest" href="manifest.json">
-
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<title>Tire Launch ULTRA</title>
 
 <style>
-body {
-  margin: 0;
-  font-family: Arial;
-  background: linear-gradient(#111, #222);
-  color: white;
-  text-align: center;
+body { margin:0; overflow:hidden; font-family:Arial; background:black;}
+
+#ui {
+position:absolute;
+bottom:0;
+width:100%;
+padding:10px;
+background:rgba(0,0,0,0.6);
+text-align:center;
+color:white;
+transition:all 0.3s;
 }
 
-#bar {
-  width: 80%;
-  height: 20px;
-  background: #333;
-  margin: 10px auto;
-  border-radius: 10px;
-  overflow: hidden;
-  position: relative;
-}
-
-#power {
-  height: 100%;
-  width: 0%;
-  background: lime;
-}
-
-.zone { position:absolute;height:100%;}
-.green { left:60%; width:20%; background:rgba(0,255,0,0.3);}
-.red { left:90%; width:10%; background:rgba(255,0,0,0.3);}
+#bar { width:80%; height:15px; background:#333; margin:10px auto; border-radius:10px;}
+#power { height:100%; width:0%; background:lime;}
 
 button {
-  padding:10px;
-  margin:5px;
-  border:none;
-  border-radius:8px;
-  background:#00c3ff;
-  font-weight:bold;
+padding:12px;
+margin:5px;
+border:none;
+border-radius:10px;
+background:#00c3ff;
+font-weight:bold;
+transition:transform 0.1s;
 }
 
-canvas {
-  background:#1a1a1a;
-  border-radius:10px;
-}
+button:active { transform:scale(0.9); }
 
-#leaderboard div {
-  background:#333;
-  margin:4px;
-  padding:5px;
-  border-radius:5px;
+#top {
+position:absolute;
+top:10px;
+width:100%;
+text-align:center;
+color:white;
+font-size:18px;
 }
 </style>
 </head>
 
 <body>
 
-<h2>🛞 Tire Launch</h2>
-
-Coins: <span id="coins">0</span> | High: <span id="high">0</span>
-
-<div id="bar">
-  <div class="zone green"></div>
-  <div class="zone red"></div>
-  <div id="power"></div>
+<div id="top">
+Coins: <span id="coins">0</span>
 </div>
 
-<button onclick="rev()">Rev</button>
-<button onclick="launch()">Launch</button>
-<button onclick="boost()">BOOST</button>
+<div id="ui">
+<div id="bar"><div id="power"></div></div>
+<button id="revBtn">REV</button>
+<button id="launchBtn">LAUNCH</button>
+</div>
 
-<canvas id="canvas" width="320" height="220"></canvas>
-
-<h3>Submit Score</h3>
-<input id="nameInput" placeholder="Your name">
-<button onclick="submitScore()">Submit</button>
-
-<h3>🏆 Leaderboard</h3>
-<div id="leaderboard"></div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/loaders/GLTFLoader.js"></script>
 
 <script>
-// 🔥 FIREBASE CONFIG
-const firebaseConfig = {
-  apiKey: "AIzaSyDskD-qA1eCLTwsOCjqrarHQfTH9uYBrik",
-  authDomain: "tire-f726f.firebaseapp.com",
-  databaseURL: "https://tire-f726f-default-rtdb.firebaseio.com",
-  projectId: "tire-f726f",
-  storageBucket: "tire-f726f.firebasestorage.app",
-  messagingSenderId: "762832858828",
-  appId: "1:762832858828:web:9b26281999fd389d47dc69"
-};
+// SCENE
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x87ceeb);
 
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
+// CAMERA
+const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,2000);
+camera.position.set(-12,6,12);
 
-// GAME DATA
-let power=0, coins=0, engine=1, tire=1, high=0;
-let lastScore=0;
-let lastSubmit=0;
+// RENDER
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
 
-const powerBar=document.getElementById("power");
+// LIGHT
+const sun=new THREE.DirectionalLight(0xffffff,1.5);
+sun.position.set(20,30,10);
+scene.add(sun);
+scene.add(new THREE.AmbientLight(0xffffff,0.5));
+
+// TEXTURES
+const loader=new THREE.TextureLoader();
+const groundTex=loader.load("https://threejs.org/examples/textures/terrain/grasslight-big.jpg");
+groundTex.wrapS=groundTex.wrapT=THREE.RepeatWrapping;
+groundTex.repeat.set(50,50);
+
+// GROUND
+const ground=new THREE.Mesh(
+new THREE.PlaneGeometry(2000,200),
+new THREE.MeshStandardMaterial({map:groundTex})
+);
+ground.rotation.x=-Math.PI/2;
+scene.add(ground);
+
+// RAMP
+const ramp=new THREE.Mesh(
+new THREE.BoxGeometry(6,1,3),
+new THREE.MeshStandardMaterial({color:0x654321})
+);
+ramp.position.set(6,1,0);
+ramp.rotation.z=-0.4;
+scene.add(ramp);
+
+// LOAD MODELS
+const gltfLoader=new THREE.GLTFLoader();
+
+let tire, engine;
+
+gltfLoader.load("tire.glb",g=>{
+tire=g.scene;
+tire.scale.set(0.02,0.02,0.02);
+tire.position.set(2,2,0);
+scene.add(tire);
+});
+
+gltfLoader.load("engine.glb",g=>{
+engine=g.scene;
+engine.scale.set(2,2,2);
+engine.position.set(0,2,0);
+scene.add(engine);
+});
+
+// AUDIO
+const listener=new THREE.AudioListener();
+camera.add(listener);
+
+const revSound=new THREE.Audio(listener);
+const launchSound=new THREE.Audio(listener);
+
+const audioLoader=new THREE.AudioLoader();
+
+audioLoader.load("https://threejs.org/examples/sounds/358232_j_s_song.mp3",b=>{
+revSound.setBuffer(b);
+revSound.setLoop(true);
+});
+
+audioLoader.load("https://threejs.org/examples/sounds/358232_j_s_song.mp3",b=>{
+launchSound.setBuffer(b);
+});
+
+// GAME
+let power=0, launched=false, vel=new THREE.Vector3();
+let coins=0;
+
+const bar=document.getElementById("power");
 const coinsText=document.getElementById("coins");
-const highText=document.getElementById("high");
-
-// SAVE USERNAME
-const nameInput=document.getElementById("nameInput");
-nameInput.value = localStorage.getItem("username") || "";
-
-nameInput.onchange = () => {
-  localStorage.setItem("username", nameInput.value);
-};
 
 // REV
-function rev(){
+revBtn.onclick=()=>{
 power=0;
+revSound.play();
+
 let i=setInterval(()=>{
-power+=2+engine;
+power+=2;
+revSound.setPlaybackRate(0.5+power/100);
+
 if(power>=100){power=100;clearInterval(i);}
-powerBar.style.width=power+"%";
+bar.style.width=power+"%";
 },40);
-}
+};
 
 // LAUNCH
-function launch(){
-let mult=1;
-if(power>60 && power<80){ mult=1.5; navigator.vibrate?.(100);}
-if(power>90){ mult=0.7;}
+launchBtn.onclick=()=>{
+if(!tire || launched) return;
 
-let speed=power*0.25*engine*mult;
-animate(speed);
+launchSound.play();
+
+let speed=power*0.08;
+vel.set(speed,speed*0.7,0);
+launched=true;
 
 power=0;
-powerBar.style.width="0%";
-}
+bar.style.width="0%";
+};
 
-// BOOST
-let boosting=false;
-function boost(){
-boosting=true;
-setTimeout(()=>boosting=false,300);
-}
+// LOOP
+function loop(){
+requestAnimationFrame(loop);
 
-// CANVAS
-const canvas=document.getElementById("canvas");
-const ctx=canvas.getContext("2d");
+if(launched && tire){
+vel.y-=0.02;
 
-function animate(speed){
-let x=0,y=170;
-let vx=speed, vy=speed*0.6;
-let g=0.4;
+tire.position.x+=vel.x;
+tire.position.y+=vel.y;
 
-let loop=setInterval(()=>{
-ctx.clearRect(0,0,320,220);
+camera.position.x+=(tire.position.x-15-camera.position.x)*0.05;
+camera.position.y+=(tire.position.y+6-camera.position.y)*0.05;
+camera.lookAt(tire.position);
 
-vy-=g;
-if(boosting) vy+=0.8;
+if(tire.position.y<=2){
+tire.position.y=2;
+vel.set(0,0,0);
+launched=false;
 
-x+=vx*0.1;
-y-=vy*0.1;
-
-if(y>=170){
-y=170;
-clearInterval(loop);
-
-let dist=Math.floor(x*tire);
-lastScore=dist;
-
-coins += Math.floor(dist/10);
-if(dist>high) high=dist;
-
-updateUI();
-}
-
-let cam=x-80;
-
-ctx.fillStyle="#444";
-ctx.fillRect(-cam,180,2000,40);
-
-ctx.fillStyle="#888";
-ctx.beginPath();
-ctx.moveTo(80-cam,180);
-ctx.lineTo(120-cam,150);
-ctx.lineTo(140-cam,180);
-ctx.fill();
-
-ctx.beginPath();
-ctx.arc(x-cam,y,12,0,Math.PI*2);
-ctx.fillStyle="white";
-ctx.fill();
-
-},30);
-}
-
-// SUBMIT SCORE (ANTI SPAM)
-function submitScore(){
-let now=Date.now();
-if(now-lastSubmit<3000) return;
-
-let name=nameInput.value.trim();
-if(!name || lastScore===0) return;
-
-db.ref("scores").push({
-name:name,
-score:lastScore
-});
-
-lastSubmit=now;
-}
-
-// LOAD LEADERBOARD
-function loadLeaderboard(){
-db.ref("scores").orderByChild("score").limitToLast(10).on("value", snap=>{
-let data=snap.val();
-let scores=[];
-
-for(let k in data){ scores.push(data[k]); }
-
-scores.sort((a,b)=>b.score-a.score);
-
-let html="";
-scores.forEach(s=>{
-html+=`<div>${s.name}: ${s.score}</div>`;
-});
-
-document.getElementById("leaderboard").innerHTML=html;
-});
-}
-
-function updateUI(){
+coins+=Math.floor(tire.position.x/2);
 coinsText.innerText=coins;
-highText.innerText=high;
+
+// impact shake
+camera.position.y+=Math.random()*0.5;
+}
 }
 
-loadLeaderboard();
+renderer.render(scene,camera);
+}
+loop();
 </script>
 
 </body>
